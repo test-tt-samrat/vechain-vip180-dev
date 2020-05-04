@@ -1,0 +1,1 @@
+{"VIP180BasicToken.sol:BasicToken":"0xB2D6bcFa10d73205c90b952ba705D38Ed58Fe045"}

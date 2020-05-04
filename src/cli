@@ -1,0 +1,169 @@
+#!/usr/bin/env node
+
+'use strict'
+const fs = require('fs')
+const path = require('path')
+var readlineSync = require('readline-sync');
+
+const Spinner = require('cli-spinner').Spinner
+
+const Web3 = require('web3')
+const thorify = require("thorify").thorify
+
+const compiler = require('./compiler')
+
+let web3
+let master 
+let output = {}
+let compiled = {}
+
+async function main() {
+    let endpoint = readlineSync.question('endpoint(http://localhost:8669): ') || 'http://localhost:8669';
+
+    if (!endpoint || !/^http(s)?/.test(endpoint)) {
+        throw new Error('endpoint error');
+    }
+    console.log(`○ connect to blockchain network ${endpoint}`)
+
+    web3 = thorify(new Web3(), endpoint)
+
+    let masterPrivKey = readlineSync.question('master privite key(with 0x prefixed): ');
+    if (!masterPrivKey) {
+        console.error('master privite key must provided')
+        process.exit(1)
+    }
+
+    web3.eth.accounts.wallet.add(masterPrivKey)
+    master = web3.eth.accounts.privateKeyToAccount(masterPrivKey)
+
+    try {
+        await web3.eth.getChainTag()
+    } catch (e) {
+        console.error(e, 'connect to blockchain failure')
+    }
+
+    console.log(`√ connection successfully activated`)
+
+    // compile contracts
+    let contractPath = path.join(__dirname, '../contracts')
+    compiled = compiler.compile(contractPath)
+ 
+    console.log(`\n√ compile successfully`)
+    let args = []
+
+    let initialHolder = readlineSync.question('initialHolder address (with 40 nibbles with 0x prefix): ')
+    if(!initialHolder || !/^0x[0-9a-f]{40}$/i.test(initialHolder)){
+        console.error('initialHolder must provided')
+        process.exit(1)
+    }
+    args.push(initialHolder)
+
+    let initialSupply = readlineSync.question('initialSupply amount: ')
+
+    if(!initialSupply || !/^[0-9]*$/.test(initialSupply)){
+        console.error('initialSupply must a positive integer')
+        process.exit(1)
+    }
+
+    let name = readlineSync.question('token name: ')
+    if(!name){
+        console.error('name can not be empty')
+        process.exit(1)
+    }
+
+    let symbol = readlineSync.question('token symbol: ')
+    if(!symbol){
+        console.error('symbol can not be empty')
+        process.exit(1)
+    }
+
+    let decimals = readlineSync.question('decimals(18): ') || 18
+    if(!decimals){
+        console.error('decimals can not be empty')
+        process.exit(1)
+    }
+
+    decimals = parseInt(decimals)
+    
+    args.push(initialSupply + (new Array(decimals)).fill(0).join(''))
+    args.push(name)
+    args.push(symbol)
+    args.push(decimals)
+    
+    // deploy token contract
+    return _deployContract('VIP180BasicToken.sol:BasicToken',{args})
+    .then(async () => {
+        // add operators
+        let contract = compiled.contracts['VIP180BasicToken.sol:BasicToken']
+        let contractInst = new web3.eth.Contract(JSON.parse(contract.interface), output['VIP180BasicToken.sol:BasicToken'])
+
+        let balance = await contractInst.methods.balanceOf(initialHolder).call();
+        console.log('initialHolder balance:',String(balance).substr(0,String(balance).length-Number(decimals)) +'.' + (new Array(decimals)).fill(0).join(''));
+        return;
+    })
+    .then(() => {
+        console.log('\n============================================ result ============================================\n')
+        console.log(output)
+
+        console.log(`\n√ save the result to result.txt`)
+        fs.writeFileSync(path.join(__dirname, "../result.txt"), JSON.stringify(output))
+
+        process.exit(0)
+    })
+    .catch(err => {
+        console.error(err)
+        process.exit(1)
+    })
+}
+
+async function _deployContract(cpath, opt={}) {
+    let args = opt.args || []
+
+    let contract = compiled.contracts[cpath]
+    let contractInst
+
+    if (!contract) {
+        return
+    }
+
+    if (opt.address) {
+        contractInst = new web3.eth.Contract(JSON.parse(contract.interface), opt.address)
+    } else {
+        contractInst = new web3.eth.Contract(JSON.parse(contract.interface))
+    }
+
+    if (!contractInst) {
+        return
+    }
+
+    let spinner = new Spinner(`start to deploy contract ${cpath}...`)
+    spinner.start()
+
+    return contractInst.deploy({ data: contract.bytecode, arguments: args })
+    .send({ from: master.address, gas: opt.gas || 10000000 })
+    .on('transactionHash', function(transactionHash){
+	console.log(`TxId=${transactionHash}`)
+    })
+    .then(receipt => {
+        spinner.stop()
+        if (!receipt['_address']) {
+            throw new Error(`fail to deploy contract ${cpath}`)
+        }
+
+        console.log(`\n√ ${cpath} deployed successfully.`)
+
+        output[cpath] = receipt['_address']
+        return
+    })
+    .catch(err => {
+        spinner.stop()
+        throw err
+    })
+}
+
+process.on('unhandledRejection', (reason, p) => {
+    console.error(p)
+    process.exit(1)
+})
+
+main();

@@ -1,0 +1,30 @@
+{
+  "name": "vip180-all-in-one-deployment",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/cli",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "deploy": "src/cli"
+  },
+  "repository": {
+    "type": "git",
+    "url": "ssh://git@vit.digonchain.com:56000/terry.tao/one-key-deploy.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bignumber.js": "^7.2.1",
+    "cli-spinner": "^0.2.8",
+    "commander": "^2.19.0",
+    "lodash": "^4.17.11",
+    "mkdir-recursive": "^0.4.0",
+    "readline-sync": "^1.4.9",
+    "solc": "^0.4.24",
+    "thor-devkit": "^0.2.6",
+    "thorify": "^0.3.6",
+    "web3": "^1.0.0-beta.36"
+  }
+}
